@@ -30,14 +30,52 @@
 ## ✅ Step 2: GPU 验证 — 完成 (2026-04-10)
 详见 docs/step2_gpu_verification.md
 
-## ▶ Step 3: garden 全分辨率训练 (进行中)
+## ✅ Step 3: garden 全分辨率训练 — 完成 (2026-04-10)
 - [x] 启动训练 (30000 iter, batch_size=1, full res)
 - [x] 性能优化：CUDA fused-ssim (1.39 → 6.71 it/s, 4.8x)
 - [x] 性能优化：DataLoader num_workers 4 → 16
 - [x] 性能优化：图片预加载到 RAM 缓存 (~6.7 → ~12 it/s, 1.8x)
-- [ ] 训练跑完 30000 iter
-- [ ] 监控显存 + PSNR
-- [ ] 训练完成后导出 .ply 模型
+- [x] 训练跑完 30000 iter (2h03m, avg 4.04 it/s)
+- [x] 监控显存 + PSNR
+- [x] 从 ckpt 手动导出 .ply 模型 (默认 save_ply=False)
+
+## 训练结果
+
+| Step | PSNR | SSIM | LPIPS (alex) | num_GS | 渲染速度 |
+|------|------|------|--------------|--------|----------|
+| 7000 | 24.88 | 0.730 | 0.420 | 3.86M | 26 ms/img |
+| **30000** | **26.10** | **0.786** | **0.267** | **6.38M** | 29 ms/img |
+
+vs. 3DGS 论文 garden: PSNR 27.41 / SSIM 0.868 / LPIPS 0.103 (vgg)
+
+差距来源：
+- LPIPS 算法不同（我们 alex，论文 vgg），数值不直接可比
+- gsplat 默认 strategy 与原版 3DGS 略有差异
+- mid-eval 在 7000 跑了 ~10 分钟 PNG 写入 + 5 分钟 trajectory 视频，下次跑加 `--disable_video` + `--ply_steps 30000` + 减少 PNG 编码
+
+## 输出文件 (服务器)
+```
+/root/autodl-tmp/output/garden_full/
+├── ckpts/
+│   ├── ckpt_6999_rank0.pt    (912 MB)
+│   └── ckpt_29999_rank0.pt   (1.5 GB)
+├── ply/
+│   └── point_cloud_29999.ply (1.5 GB, 6.38M gaussians)
+├── videos/
+│   ├── traj_6999.mp4         (107 MB, 174 帧)
+│   └── traj_29999.mp4        (134 MB, 174 帧)
+├── stats/
+│   ├── train_step{6999,29999}_rank0.json
+│   └── val_step{6999,29999}.json
+├── renders/                  (24 val PNGs each step)
+└── tb/                       (tensorboard)
+```
+
+## ▶ Step 4: 传回本机 (进行中)
+- [x] 拉回 val_step{6999,29999}.json
+- [ ] 拉回 cfg.yml + train.log
+- [ ] 拉回 point_cloud_29999.ply (1.5 GB)
+- [ ] 拉回 traj_29999.mp4 (134 MB)
 
 ## 性能优化记录
 | 阶段 | it/s | ETA | 说明 |

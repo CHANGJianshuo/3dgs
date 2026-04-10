@@ -1,0 +1,33 @@
+Patch: speed up PNG saves in eval by lowering zlib compression level.
+
+Why
+---
+simple_trainer.py's eval() saves a (pixels|colors) canvas as PNG for
+each val image. For full-res Mip-NeRF 360 (5187x6722x3 uint8 ≈ 100 MB
+per canvas) the default compress_level=5 takes ~30 seconds per image
+on a single CPU thread. With 24 val images that's ~12 minutes per
+eval call, run twice (at iter 7000 and 30000) → ~24 minutes wasted.
+
+What
+----
+Add `compress_level=1` to the imageio.imwrite call so PNG zlib stops
+trying to be clever. Output files are larger (~3-5x) but writing is
+~5x faster on full-res images.
+
+Diff (vs gsplat 1.5.3 examples/simple_trainer.py)
+-------------------------------------------------
+@@ class Runner.eval, near line 950 @@
+                 imageio.imwrite(
+                     f"{self.render_dir}/{stage}_step{step}_{i:04d}.png",
+                     canvas,
++                    compress_level=1,
+                 )
+
+The patch script `patch_png.py` is uploaded to /root/autodl-tmp/ on the
+AutoDL box, idempotent, and saves a backup to
+simple_trainer.py.pre_compress_bak.
+
+Note: a cleaner long-term fix is to also pass `--disable_video` so the
+174-frame trajectory render at the end of each eval is skipped. The
+local train_garden.sh has been updated to include this flag for future
+runs.

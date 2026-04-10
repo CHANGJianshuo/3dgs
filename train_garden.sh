@@ -22,8 +22,10 @@ python examples/simple_trainer.py default \
     --data_dir $DATA \
     --result_dir $OUT \
     --data_factor 1 \
+    --batch_size 1 \
     --max_steps 30000 \
     --eval_steps 7000 30000 \
     --save_steps 7000 30000 \
     --disable_viewer \
+    --disable_video \
     2>&1 | tee $LOG
