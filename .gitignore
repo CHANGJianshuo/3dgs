@@ -3,6 +3,8 @@ data/
 output/
 *.ply
 *.splat
+*.mp4
+*.pt
 
 # Python
 __pycache__/
