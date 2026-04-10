@@ -1,0 +1,79 @@
+Patch: preload all undistorted images into a RAM cache in gsplat's
+examples/datasets/colmap.py Dataset class.
+
+Why
+---
+The vanilla simple_trainer Dataset re-reads each image from disk and
+re-runs cv2.remap() on every training iteration. With 185 full-res
+Mip-NeRF 360 images that's the dominant per-iter cost on an A100 — GPU
+util sits at ~50% bouncing 0..80% because the data pipeline starves it.
+
+What
+----
+1. In `Dataset.__init__`: after computing `self.indices`, walk every
+   index, decode the JPEG, run undistortion+ROI crop *once*, and store
+   the resulting numpy array in `self._image_cache`.
+2. In `Dataset.__getitem__`: read from `self._image_cache[index]`
+   instead of touching disk or cv2.remap. The cache stores
+   already-undistorted images so the per-iter undistort branch is gone.
+
+Memory cost
+-----------
+- garden train split: 161 images → 8.42 GB RAM
+- garden val split:    24 images → 1.26 GB RAM
+- The server has 629 GB RAM available, so this is free.
+
+Speed impact (garden, A100 PCIe 40GB)
+-------------------------------------
+- Before: ~6.7 it/s (data pipeline bound, GPU often idle)
+- After:  ~12.2 it/s (1.8x), GPU util 0..83% bouncing — still room
+
+How to apply on the server
+--------------------------
+The patch script `patch_colmap.py` (uploaded via scp to
+/root/autodl-tmp/patch_colmap.py on the AutoDL box) is idempotent — it
+checks for `_image_cache` in the file and skips if already patched, and
+saves a backup to `colmap.py.pre_cache_bak`.
+
+Diff (vs gsplat 1.5.3 examples/datasets/colmap.py)
+--------------------------------------------------
+@@ in class Dataset.__init__, after self.indices is set @@
++        # === Preload all undistorted images into RAM cache (massive speedup) ===
++        print(f"[Dataset] preloading {len(self.indices)} {split} images into RAM cache ...", flush=True)
++        import time as _t
++        _t0 = _t.time()
++        self._image_cache = {}
++        self._mask_cache = {}
++        for _idx in self.indices:
++            _img = imageio.imread(self.parser.image_paths[_idx])[..., :3]
++            _cam_id = self.parser.camera_ids[_idx]
++            _params = self.parser.params_dict[_cam_id]
++            if len(_params) > 0:
++                _mapx = self.parser.mapx_dict[_cam_id]
++                _mapy = self.parser.mapy_dict[_cam_id]
++                _img = cv2.remap(_img, _mapx, _mapy, cv2.INTER_LINEAR)
++                _x, _y, _w, _h = self.parser.roi_undist_dict[_cam_id]
++                _img = _img[_y:_y + _h, _x:_x + _w]
++            self._image_cache[int(_idx)] = np.ascontiguousarray(_img)
++        _bytes = sum(v.nbytes for v in self._image_cache.values())
++        print(f"[Dataset] preloaded {len(self._image_cache)} images, {_bytes/1e9:.2f} GB RAM, took {_t.time()-_t0:.1f}s", flush=True)
+
+@@ in Dataset.__getitem__ @@
+-        image = imageio.imread(self.parser.image_paths[index])[..., :3]
++        # === RAM cache hit: image is already undistorted+cropped ===
++        image = self._image_cache[int(index)]
+         camera_id = self.parser.camera_ids[index]
+         K = self.parser.Ks_dict[camera_id].copy()  # undistorted K
+         params = self.parser.params_dict[camera_id]
+         camtoworlds = self.parser.camtoworlds[index]
+         mask = self.parser.mask_dict[camera_id]
+-
+-        if len(params) > 0:
+-            # Images are distorted. Undistort them.
+-            mapx, mapy = (
+-                self.parser.mapx_dict[camera_id],
+-                self.parser.mapy_dict[camera_id],
+-            )
+-            image = cv2.remap(image, mapx, mapy, cv2.INTER_LINEAR)
+-            x, y, w, h = self.parser.roi_undist_dict[camera_id]
+-            image = image[y : y + h, x : x + w]
