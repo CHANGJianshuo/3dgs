@@ -1,0 +1,18 @@
+# Data (too large for git)
+data/
+output/
+*.ply
+*.splat
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Logs
+*.log
+wandb/
+tf-logs/
+
+# System
+.DS_Store
