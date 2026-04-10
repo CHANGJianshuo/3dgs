@@ -10,6 +10,7 @@ LOG=/root/autodl-tmp/output/garden_full.log
 mkdir -p $(dirname $OUT)
 export PATH=/usr/local/cuda/bin:$PATH
 export CUDA_HOME=/usr/local/cuda
+export TORCH_CUDA_ARCH_LIST="8.0"  # A100 sm_80
 source /root/miniconda3/bin/activate gsplat
 
 cd /root/autodl-tmp/gsplat_repo
